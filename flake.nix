@@ -23,6 +23,7 @@
         core = ./modules/core.nix;
         network = ./modules/network.nix;
         ssh = ./modules/ssh.nix;
+        moonlight = ./modules/moonlight.nix;
       };
 
       lib = {
@@ -46,10 +47,20 @@
       # through every module -- building one needs a lock and root, which
       # a check has neither of.
       checks = forAllSystems (pkgs: self.packages.${pkgs.stdenv.hostPlatform.system} // {
-        modules = pkgs.writeText "lock-input.json" (builtins.toJSON
-          (self.lib.mkImage {
-            modules = with self.raspiosModules; [ network ssh { name = "check"; } ];
-          }).lockInput);
+        modules = pkgs.writeText "images.json" (builtins.toJSON (map
+          (m: let image = self.lib.mkImage { inherit pkgs; modules = m; }; in {
+            inherit (image) lockInput persistent;
+            inherit (image.config) cmdline healthChecks;
+            files = builtins.attrNames image.config.files;
+          })
+          (with self.raspiosModules; [
+            [ network ssh { name = "headless"; } ]
+            [ network ssh moonlight {
+                name = "moonlight";
+                moonlight.pairingFile = "/run/secrets/moonlight-conf";
+                moonlight.display.mode = "1920x1080@60";
+              } ]
+          ])));
       });
 
       apps = forAllSystems (pkgs: lib.mapAttrs (_: p: {

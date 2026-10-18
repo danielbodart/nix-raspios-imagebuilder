@@ -137,47 +137,59 @@ From `modules/core.nix`, beside `name`, `lock` and `builder`:
 | `configTxt`, `cmdline` | The firmware's `config.txt`, and kernel arguments |
 | `timeZone`, `suite`, `kernelPackage`, `bootFiles`, `sizes`, `dpkgOptions`, `emergencyShell` | |
 
-`raspiosModules.network` is DHCP on ethernet with systemd-networkd,
--resolved and -timesyncd. `raspiosModules.ssh` is OpenSSH for root by key,
-`ssh.authorizedKeys`, with its host key on the persistent partition — from
-`ssh.hostKeyFile` at flash time, so it can be pinned beforehand, or made on
-first boot.
+## Modules
+
+Each is opt-in: an image has only what it imports.
+
+- **`network`**: DHCP on ethernet with systemd-networkd, -resolved and
+  -timesyncd.
+- **`ssh`**: OpenSSH for root by key, `ssh.authorizedKeys`, with its host
+  key on the persistent partition — from `ssh.hostKeyFile` at flash time,
+  so it can be pinned beforehand, or made on first boot. The upgrade app
+  needs it, or another way in as root.
+- **`moonlight`**: a [Moonlight](https://moonlight-stream.org) client that
+  boots straight into Moonlight on the TV, with the Pi's hardware HEVC
+  decode. Its settings and pairings live on the persistent partition, so
+  upgrades keep them; `moonlight.pairingFile` puts a `Moonlight.conf` from
+  an already paired client on at flash time, so even a reflash needs no
+  pairing. `moonlight.display.mode` pins the mode, e.g. `"1920x1080@60"`:
+  left alone, a Pi 4 on a 4K TV ends up at 4K30. Controllers work through
+  hidraw and uinput; an upgrade keeps a slot only if Moonlight stays up on
+  it.
+
+```nix
+modules = with raspios.raspiosModules; [
+  network ssh moonlight
+  {
+    name = "tv";
+    lock = ./raspios.lock.json;
+    ssh.authorizedKeys = [ "ssh-ed25519 AAAA… you@laptop" ];
+    moonlight.pairingFile = "/run/secrets/moonlight-conf";
+    moonlight.display.mode = "1920x1080@60";
+  }
+];
+```
 
 ## Writing a module
 
-A module is any of the options above. A Moonlight streaming client, for
-instance — Moonlight's own repository, its package, a service on the TV,
-and its pairing kept across upgrades:
+A module is any of the options above. A box that serves a directory over
+HTTP, kept on the persistent partition:
 
 ```nix
 { pkgs, ... }:
 {
-  sources.moonlight = {
-    uri = "https://dl.cloudsmith.io/public/moonlight-game-streaming/moonlight-qt/deb/raspbian";
-    key = ./moonlight-archive.asc;
-  };
-  packages = [ "moonlight-qt" ];
-
-  files."etc/systemd/system/moonlight.service" = pkgs.writeText "moonlight.service" ''
-    [Unit]
-    RequiresMountsFor=/home/moonlight
-    [Service]
-    User=moonlight
-    ExecStart=/usr/bin/moonlight-qt
-    Restart=always
-    [Install]
-    WantedBy=multi-user.target
+  packages = [ "nginx" ];
+  files."etc/nginx/sites-enabled/default" = pkgs.writeText "default" ''
+    server { listen 80; root /persistent/www; }
   '';
-  units = [ "moonlight" ];
-  customize = [ ''
-    chroot "$root" useradd --uid 1000 --user-group --no-create-home \
-      --home-dir /home/moonlight --groups video,render,input,audio moonlight
-  '' ];
-
-  persistent."home/moonlight" = { owner = "1000:1000"; mode = "0750"; };
-  healthChecks = [ "stays_up moonlight" ];
+  units = [ "nginx" ];
+  persistent.www = { owner = "33:33"; };  # www-data
+  healthChecks = [ "stays_up nginx" ];
 }
 ```
+
+`modules/moonlight.nix` is a fuller one: its own apt repository, a user,
+options of its own, and a secret put on at flash time.
 
 ## Hardware
 
