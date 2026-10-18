@@ -135,6 +135,7 @@ From `modules/core.nix`, beside `name`, `lock` and `builder`:
 | `persistent."<path>"` | The persistent partition: directories, with `owner` and `mode`, and files `source`d from the flashing machine — secrets, never in the store |
 | `healthChecks` | Shell run on a slot on trial; each must pass for an upgrade to keep it. `stays_up <unit>` waits for a unit to settle |
 | `configTxt`, `cmdline` | The firmware's `config.txt`, and kernel arguments |
+| `display.mode`, `display.connector` | The mode the kernel drives the display at, e.g. `"1920x1080@60"` on `"HDMI-A-1"`, as `video=` |
 | `timeZone`, `suite`, `kernelPackage`, `bootFiles`, `sizes`, `dpkgOptions`, `emergencyShell` | |
 
 ## Modules
@@ -152,21 +153,23 @@ Each is opt-in: an image has only what it imports.
   decode. Its settings and pairings live on the persistent partition, so
   upgrades keep them; `moonlight.pairingFile` puts a `Moonlight.conf` from
   an already paired client on at flash time, so even a reflash needs no
-  pairing. `moonlight.display.mode` pins the mode, e.g. `"1920x1080@60"`:
-  left alone, a Pi 4 on a 4K TV ends up at 4K30. Controllers work through
-  hidraw and uinput; an upgrade keeps a slot only if Moonlight stays up on
-  it.
+  pairing. `moonlight.display.mode` pins Moonlight's mode, e.g.
+  `"1920x1080@60"`: left alone, a Pi 4 on a 4K TV ends up at 4K30. It is
+  apart from the console's, `display.mode`; set both alike, or the TV
+  re-syncs as Moonlight starts. Controllers work through hidraw and
+  uinput; an upgrade keeps a slot only if Moonlight stays up on it.
 
 ```nix
 modules = with raspios.raspiosModules; [
   network ssh moonlight
-  {
+  ({ config, ... }: {
     name = "tv";
     lock = ./raspios.lock.json;
     ssh.authorizedKeys = [ "ssh-ed25519 AAAA… you@laptop" ];
+    display.mode = "1920x1080@60";
+    moonlight.display.mode = config.display.mode;
     moonlight.pairingFile = "/run/secrets/moonlight-conf";
-    moonlight.display.mode = "1920x1080@60";
-  }
+  })
 ];
 ```
 

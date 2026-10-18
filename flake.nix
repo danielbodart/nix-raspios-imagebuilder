@@ -58,6 +58,7 @@
             [ network ssh moonlight {
                 name = "moonlight";
                 moonlight.pairingFile = "/run/secrets/moonlight-conf";
+                display.mode = "1920x1080@60";
                 moonlight.display.mode = "1920x1080@60";
               } ]
           ])));

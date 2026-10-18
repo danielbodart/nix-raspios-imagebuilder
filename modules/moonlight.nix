@@ -57,10 +57,12 @@ in
         default = null;
         example = "1920x1080@60";
         description = ''
-          The mode to drive it at, for Moonlight and the console alike.
-          Unset, Qt takes the first mode the display offers that the Pi can
-          drive, which on a 4K TV -- or a receiver in front of one -- is
-          4K at 30Hz, since a Pi 4 cannot drive 4K60 by default.
+          The mode Moonlight drives the display at. Unset, Qt takes the
+          first mode the display offers that the Pi can drive, which on a
+          4K TV -- or a receiver in front of one -- is 4K at 30Hz, since a
+          Pi 4 cannot drive 4K60 by default. The console's is the image's
+          own display.mode; set both alike, or the TV re-syncs whenever
+          Moonlight starts.
         '';
       };
     };
@@ -113,10 +115,6 @@ in
         outputs = [ { name = qtOutput; mode = cfg.display.mode; } ];
       });
     };
-
-    # The console's mode too, once the display has answered with what it
-    # offers.
-    cmdline = lib.optional (cfg.display.mode != null) "video=${cfg.display.connector}:${cfg.display.mode}";
 
     units = [ "moonlight" ];
 

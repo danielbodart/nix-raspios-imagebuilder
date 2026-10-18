@@ -129,6 +129,26 @@ in
       description = "Kernel arguments beyond the root and overlay ones each slot is given.";
     };
 
+    display = {
+      connector = mkOption {
+        type = types.str;
+        default = "HDMI-A-1";
+        description = "The connector display.mode is for, as the kernel names it.";
+      };
+
+      mode = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "1920x1080@60";
+        description = ''
+          The mode the kernel drives the display at -- the console, and
+          anything that keeps the mode it finds -- as its video= argument.
+          Unset, it takes the display's preferred mode, if the Pi can drive
+          it.
+        '';
+      };
+    };
+
     emergencyShell = mkOption {
       type = types.bool;
       default = true;
@@ -296,6 +316,9 @@ in
         Environment=SYSTEMD_SULOGIN_FORCE=1
       '';
     };
+
+    cmdline = lib.optional (config.display.mode != null)
+      "video=${config.display.connector}:${config.display.mode}";
 
     persistent.home = { };
 
