@@ -21,7 +21,7 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       # Pushes what the check builds. Without the secret it only substitutes.
       - uses: cachix/cachix-action@v17
