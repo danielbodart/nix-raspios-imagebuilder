@@ -202,6 +202,20 @@ same kernel and firmware. A Pi 5 should need only
 untested. The bootloader must be recent enough for `autoboot.txt` with
 tryboot — any Pi 4 EEPROM from 2023 on.
 
+## Channels
+
+Nix only: there is no tarball, binary or image of its own to ship. The
+flake — its apps, `lib.mkImage` and `raspiosModules` — is consumed as an
+input, at `trunk`, built by **nixpkgs** (nixos-26.05; take it with
+`inputs.nixpkgs.follows`). `mise run check` (`mise.toml` pins shellcheck)
+shellchecks the apps; `nix flake check` builds them and evaluates an image
+through every module.
+
+It is **updated** weekly, Sunday 21:23 UTC (`.github/workflows/update.yml`):
+the flake's inputs and mise's tools, committed to `trunk` once both checks
+pass, the apps pushed to danielbodart.cachix.org. An image's own packages
+move only when you run `lock` for it.
+
 ## License
 
 MIT

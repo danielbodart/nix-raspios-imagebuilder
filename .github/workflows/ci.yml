@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# No release: the flake is the only channel, taken at trunk.
+jobs:
+  # The fast checks, with the tools mise.toml pins: each app shellchecked.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - name: mise run check
+        run: mise run check
+
+  # The apps built (and shellchecked as writeShellApplication does), and an
+  # image evaluated through every module. Not an image built -- that needs a
+  # package lock and root, and an aarch64 builder or KVM. On trunk, the apps
+  # go to danielbodart.cachix.org, and nothing else.
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: danielbodart
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+
+      - name: nix flake check
+        run: nix flake check --print-build-logs
+
+      - name: Push the apps to Cachix
+        if: github.ref == 'refs/heads/trunk' && github.event_name != 'pull_request'
+        run: nix build .#lock .#flash .#upgrade --print-out-paths | cachix push danielbodart

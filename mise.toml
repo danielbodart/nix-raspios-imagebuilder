@@ -1,0 +1,18 @@
+# The tools the fast checks need, pinned to the patch, for CI and for anyone
+# working on this. The weekly update (.github/workflows/update.yml) moves
+# each to the latest patch of its minor; a minor moves by hand.
+#
+# nix-raspios-imagebuilder is Nix-only: its apps, modules and images are
+# built by Nix, so there is no build or dist task. The flake's own checks
+# (the apps built, an image evaluated through every module) are CI's nix job.
+[tools]
+shellcheck = "0.11.0"
+
+[tasks.check]
+description = "shellcheck each app as Nix builds it: scripts/common.sh, then the script"
+run = '''
+for app in flash lock upgrade; do
+  echo "shellcheck $app"
+  cat scripts/common.sh "scripts/$app.sh" | shellcheck --shell=bash -
+done
+'''
