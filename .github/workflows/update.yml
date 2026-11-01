@@ -10,8 +10,12 @@
 #
 # The result is committed straight to trunk, as github-actions[bot], only if
 # everything CI runs passes with it -- mise run check and nix flake check --
-# never as a pull request; the apps then go to danielbodart.cachix.org.
-# Nothing is released: the flake is the only channel.
+# never as a pull request; the apps then go to danielbodart.cachix.org. A
+# push with GITHUB_TOKEN starts no workflow, so if what moved is something a
+# release is made of (RELEASE_PATHS in mise.toml), this starts CI on the
+# pushed commit with release=true. Today nothing that moves is: flake.lock
+# is replaced by a consumer's own nixpkgs, and mise.toml only pins the
+# checks' shellcheck, so a week releases nothing.
 name: Weekly update
 on:
   schedule:
@@ -19,13 +23,24 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: update
+
+# bash, so GitHub runs every step with -eo pipefail: a command that fails on
+# the left of a pipe fails the step rather than handing on what it printed.
+defaults:
+  run:
+    shell: bash
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
+      # The whole history and the tags: the release check compares with the
+      # last release tag.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: cachix/install-nix-action@v31
         with:
@@ -89,3 +104,10 @@ jobs:
       - name: Push the apps to Cachix
         if: steps.moved.outputs.moved
         run: nix build .#lock .#flash .#upgrade --print-out-paths | cachix push danielbodart
+
+      - name: Release, if what moved is released
+        if: steps.moved.outputs.moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if mise run release-due; then gh workflow run ci.yml --ref trunk -f release=true; fi

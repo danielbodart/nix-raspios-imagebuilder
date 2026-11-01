@@ -3,16 +3,39 @@
 # each to the latest patch of its minor; a minor moves by hand.
 #
 # nix-raspios-imagebuilder is Nix-only: its apps, modules and images are
-# built by Nix, so there is no build or dist task. The flake's own checks
-# (the apps built, an image evaluated through every module) are CI's nix job.
+# built by Nix, so `build` is the apps' nix build and there is no dist task.
+# The flake's own checks (the apps built, an image evaluated through every
+# module) are CI's nix job.
 [tools]
 shellcheck = "0.11.0"
 
+# What a release is: the flake is the only channel, and its tag is what
+# other flakes pin, so what it evaluates and builds - flake.nix, build/,
+# modules/, the apps' scripts and the archive keys - and VERSION release. A
+# change to any of these since the last release tag is released (see
+# release-due); the workflows, docs, examples, mise.toml and flake.lock (a
+# consumer's own nixpkgs replaces it, by inputs.nixpkgs.follows) are not.
+[env]
+RELEASE_PATHS = "flake.nix build modules scripts/common.sh scripts/flash.sh scripts/lock.sh scripts/upgrade.sh keys VERSION"
+
 [tasks.check]
-description = "shellcheck each app as Nix builds it: scripts/common.sh, then the script"
+description = "shellcheck each app as Nix builds it: scripts/common.sh, then the script; and scripts/version.sh"
 run = '''
 for app in flash lock upgrade; do
   echo "shellcheck $app"
   cat scripts/common.sh "scripts/$app.sh" | shellcheck --shell=bash -
 done
+shellcheck scripts/version.sh
+'''
+
+[tasks.build]
+description = "The apps, lock, flash and upgrade, for this machine, by Nix"
+run = "nix build .#lock .#flash .#upgrade"
+
+[tasks.release-due]
+description = "Print true and succeed if anything in RELEASE_PATHS changed since the last release tag (or there is none), else print false and fail"
+run = '''
+set -f
+last=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null) || { echo true; exit 0; }
+if [ -n "$(git diff --name-only "$last" HEAD -- $RELEASE_PATHS)" ]; then echo true; else echo false; exit 1; fi
 '''

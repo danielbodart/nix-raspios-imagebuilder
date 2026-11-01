@@ -5,11 +5,21 @@ on:
     branches: [trunk]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: Release this commit even if nothing in RELEASE_PATHS changed since the last release
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# No release: the flake is the only channel, taken at trunk.
+# bash, so GitHub runs every step with -eo pipefail: a command that fails on
+# the left of a pipe fails the step rather than handing on what it printed.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # The fast checks, with the tools mise.toml pins: each app shellchecked.
   check:
@@ -46,3 +56,49 @@ jobs:
       - name: Push the apps to Cachix
         if: github.ref == 'refs/heads/trunk' && github.event_name != 'pull_request'
         run: nix build .#lock .#flash .#upgrade --print-out-paths | cachix push danielbodart
+
+  # The release: the flake is the only channel, and a release is its tag,
+  # v$(scripts/version.sh), which other flakes pin. Cut on trunk once both
+  # checks pass, and only when what the flake evaluates and builds changed
+  # since the last release tag (RELEASE_PATHS in mise.toml), so a week where
+  # only flake.lock moved, or a change to the workflows or the README,
+  # releases nothing. A dispatch with `release` forces one. The notes are the
+  # commits since the last release.
+  release:
+    needs: [check, nix]
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # fetch-depth: 0 because the version's minor is the commit count and
+      # scripts/version.sh REFUSES a shallow clone; the tags, for
+      # release-due and the notes.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: jdx/mise-action@v5
+
+      - name: Is a release due?
+        id: due
+        env:
+          FORCE: ${{ inputs.release }}
+        run: |
+          if [ "$FORCE" = true ] || mise run -q release-due; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create the GitHub release
+        if: steps.due.outputs.due == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="$(scripts/version.sh)"
+          if PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null); then
+            git log "$PREV..HEAD" --pretty='- %s (%h)' > notes.md
+          else
+            { echo 'First release.'; echo; git log -1 --pretty='- %s (%h)'; } > notes.md
+          fi
+          gh release create "v$V" --title "v$V" --notes-file notes.md --target "$GITHUB_SHA" --latest

@@ -204,17 +204,22 @@ tryboot — any Pi 4 EEPROM from 2023 on.
 
 ## Channels
 
-Nix only: there is no tarball, binary or image of its own to ship. The
-flake — its apps, `lib.mkImage` and `raspiosModules` — is consumed as an
-input, at `trunk`, built by **nixpkgs** (nixos-26.05; take it with
-`inputs.nixpkgs.follows`). `mise run check` (`mise.toml` pins shellcheck)
-shellchecks the apps; `nix flake check` builds them and evaluates an image
-through every module.
+- **Nix**: flake input `github:danielbodart/nix-raspios-imagebuilder/v<version>`
+  with `inputs.nixpkgs.follows = "nixpkgs"`; the apps (`packages.<system>.lock`,
+  `.flash`, `.upgrade`), `lib.mkImage` and `raspiosModules`. Built by nixpkgs
+  (nixos-26.05), the apps cached at `danielbodart.cachix.org`.
+- Not shipped: Docker - nothing here runs as a service; an image is built by
+  Nix from a lock its owner makes.
+- Not shipped: tarball + systemd - the apps are shell scripts over Nix, ssh
+  and sudo, and an image only exists as a Nix derivation.
 
-It is **updated** weekly, Sunday 21:23 UTC (`.github/workflows/update.yml`):
-the flake's inputs and mise's tools, committed to `trunk` once both checks
-pass, the apps pushed to danielbodart.cachix.org. An image's own packages
-move only when you run `lock` for it.
+Updated weekly (Sunday 21:23 UTC): the flake's inputs and mise's tools (the
+shellcheck `mise run check` uses) to the latest patch of their minor,
+committed to `trunk` once `mise run check` and `nix flake check` pass. An
+image's own packages move only when you run `lock` for it. A release, a tag
+`v0.<commit count>.<run>`, is cut when `flake.nix`, `build/`, `modules/`, the
+apps' scripts, `keys/` or `VERSION` changed since the last release
+(`RELEASE_PATHS` in `mise.toml`), never for flake.lock alone.
 
 ## License
 
