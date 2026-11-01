@@ -1,0 +1,91 @@
+# The weekly update: every dependency nix-raspios-imagebuilder has, moved in
+# the one window a week all of danielbodart's repos share, Sunday 21:23 UTC.
+# nix-config follows at 23:23 on the same nixos-26.05, so the apps this
+# builds and pushes are the derivations nix-config builds.
+#
+# What moves: the flake's inputs (nix flake update), and mise.toml's tools,
+# each to the latest patch of its pinned minor (a minor moves by hand). An
+# image's packages are not among them: they are locked per image, by the
+# lock app, when its owner runs it.
+#
+# The result is committed straight to trunk, as github-actions[bot], only if
+# everything CI runs passes with it -- mise run check and nix flake check --
+# never as a pull request; the apps then go to danielbodart.cachix.org.
+# Nothing is released: the flake is the only channel.
+name: Weekly update
+on:
+  schedule:
+    - cron: "23 21 * * 0"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: update
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Reads the cache; what is pushed is only the apps, below.
+      - uses: cachix/cachix-action@v17
+        with:
+          name: danielbodart
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+
+      - uses: jdx/mise-action@v5
+
+      - name: Move the flake's inputs
+        run: |
+          nix flake update 2>&1 | tee "$RUNNER_TEMP/flake.log"
+          grep -oE "Updated input '[^'/]+'" "$RUNNER_TEMP/flake.log" | cut -d"'" -f2 >> "$RUNNER_TEMP/moved" || true
+
+      - name: Move mise's tools to the latest patch of their minor
+        run: |
+          mise ls --local --json | jq -r 'to_entries[] | .key + " " + .value[0].requested_version' |
+            while read -r tool pinned; do
+              [[ $pinned =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+              latest=$(mise latest "$tool@${pinned%.*}")
+              [ -n "$latest" ] && [ "$latest" != "$pinned" ] || continue
+              sed -i "s|^\(\"\{0,1\}$tool\"\{0,1\} *= *\)\"$pinned\"|\1\"$latest\"|" mise.toml
+              echo "$tool $pinned -> $latest" >> "$RUNNER_TEMP/moved"
+            done
+          mise install
+
+      - name: What moved
+        id: moved
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then echo "Nothing moved."; exit 0; fi
+          touch "$RUNNER_TEMP/moved"
+          moved=$(sort -u "$RUNNER_TEMP/moved" | paste -sd, - | sed 's/,/, /g')
+          echo "moved=${moved:-$(git status --porcelain | cut -c4- | paste -sd, - | sed 's/,/, /g')}" >> "$GITHUB_OUTPUT"
+
+      - name: mise run check
+        if: steps.moved.outputs.moved
+        run: mise run check
+
+      - name: nix flake check
+        if: steps.moved.outputs.moved
+        run: nix flake check --print-build-logs
+
+      - name: Commit and push
+        if: steps.moved.outputs.moved
+        env:
+          MOVED: ${{ steps.moved.outputs.moved }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Weekly update: $MOVED"
+          git pull -q --rebase origin trunk
+          git push -q origin HEAD:trunk
+
+      - name: Push the apps to Cachix
+        if: steps.moved.outputs.moved
+        run: nix build .#lock .#flash .#upgrade --print-out-paths | cachix push danielbodart
